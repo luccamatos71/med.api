@@ -20,7 +20,7 @@ from app.schemas.material import (
     ReadPositionResponse,
     ReadPositionUpdate,
 )
-from app.services.storage_service import upload_file
+from app.services.storage_service import upload_file, get_presigned_url as get_presigned_url_service
 from app.workers.arq_settings import REDIS_SETTINGS
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -174,6 +174,25 @@ async def retry_material(
     await _enqueue_process(material.id)
 
     return MaterialResponse.model_validate(material)
+
+
+# ---------------------------------------------------------------------------
+# Presigned URL endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{material_id}/presigned-url")
+async def get_material_presigned_url(
+    material_id: UUID,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Return a presigned URL for the material's underlying file."""
+    material = await _get_material_or_404(material_id, current_user["user_id"], db)
+    if not material.file_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file associated with this material")
+    url = await get_presigned_url_service(material.file_key)
+    return {"url": url}
 
 
 # ---------------------------------------------------------------------------
