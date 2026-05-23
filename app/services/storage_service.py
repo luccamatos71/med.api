@@ -1,3 +1,5 @@
+import asyncio
+
 import boto3
 from app.core.config import settings
 
@@ -14,12 +16,19 @@ s3 = boto3.client(
 
 
 async def upload_file(file_bytes: bytes, key: str, content_type: str) -> str:
-    s3.put_object(Bucket=settings.STORAGE_BUCKET_NAME, Key=key, Body=file_bytes, ContentType=content_type)
+    await asyncio.to_thread(
+        s3.put_object,
+        Bucket=settings.STORAGE_BUCKET_NAME,
+        Key=key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
     return key
 
 
 async def get_presigned_url(key: str, expires_in: int = 3600) -> str:
-    return s3.generate_presigned_url(
+    return await asyncio.to_thread(
+        s3.generate_presigned_url,
         "get_object",
         Params={"Bucket": settings.STORAGE_BUCKET_NAME, "Key": key},
         ExpiresIn=expires_in,

@@ -1,5 +1,6 @@
 """Materials API router — upload, CRUD, read-position endpoints."""
 import uuid
+from datetime import datetime, timezone
 from typing import List
 from uuid import UUID
 
@@ -223,7 +224,6 @@ async def upsert_read_position(
 
     if position:
         position.position_data = body.position_data
-        from datetime import datetime, timezone
         position.updated_at = datetime.now(timezone.utc)
     else:
         position = MaterialReadPosition(

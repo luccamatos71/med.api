@@ -1,4 +1,5 @@
 """ARQ worker job for processing uploaded materials."""
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -58,7 +59,7 @@ async def process_material(ctx, material_id: str) -> None:  # noqa: ARG001
         if material_type == "pdf":
             if not material_file_key:
                 raise ValueError("Material do tipo PDF não tem file_key")
-            file_bytes = _download_from_storage(material_file_key)
+            file_bytes = await asyncio.to_thread(_download_from_storage, material_file_key)
             pages = parse_pdf(file_bytes)
             chunks = chunk_pages(pages)
         else:

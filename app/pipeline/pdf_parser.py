@@ -16,21 +16,19 @@ def parse_pdf(file_bytes: bytes) -> list[dict]:
     Raises:
         ValueError: If the PDF contains no extractable text (likely a scanned image).
     """
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages: list[dict] = []
+    with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+        pages: list[dict] = []
 
-    for page_index in range(len(doc)):
-        page = doc[page_index]
-        text = page.get_text("text")
-        pages.append(
-            {
-                "text": text,
-                "page_number": page_index + 1,
-                "section": None,
-            }
-        )
-
-    doc.close()
+        for page_index in range(len(doc)):
+            page = doc[page_index]
+            text = page.get_text("text")
+            pages.append(
+                {
+                    "text": text,
+                    "page_number": page_index + 1,
+                    "section": None,
+                }
+            )
 
     total_text = "".join(p["text"].strip() for p in pages)
     if not total_text:
