@@ -6,10 +6,13 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/med"
     REDIS_URL: str = "redis://localhost:6379"
-    R2_ENDPOINT_URL: str = ""
-    AWS_ACCESS_KEY_ID: str = ""
-    AWS_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "med-materials"
+
+    # Supabase Storage (S3-compatible)
+    STORAGE_ENDPOINT_URL: str = ""
+    STORAGE_ACCESS_KEY_ID: str = ""
+    STORAGE_SECRET_ACCESS_KEY: str = ""
+    STORAGE_BUCKET_NAME: str = "med-materials"
+
     NEXTAUTH_SECRET: str = "dev-secret-change-in-production"
     OPENAI_API_KEY: str = ""
     SENTRY_DSN: str = ""
