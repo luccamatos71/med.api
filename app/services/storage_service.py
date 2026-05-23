@@ -13,7 +13,7 @@ s3 = boto3.client(
 )
 
 
-async def upload_to_r2(file_bytes: bytes, key: str, content_type: str) -> str:
+async def upload_file(file_bytes: bytes, key: str, content_type: str) -> str:
     s3.put_object(Bucket=settings.STORAGE_BUCKET_NAME, Key=key, Body=file_bytes, ContentType=content_type)
     return key
 

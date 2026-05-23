@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     STORAGE_SECRET_ACCESS_KEY: str = ""
     STORAGE_BUCKET_NAME: str = "med-materials"
 
-    NEXTAUTH_SECRET: str = "dev-secret-change-in-production"
+    NEXTAUTH_SECRET: str
     OPENAI_API_KEY: str = ""
     SENTRY_DSN: str = ""
     ENVIRONMENT: str = "development"
