@@ -1,0 +1,19 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    DATABASE_URL: str = "postgresql+asyncpg://user:pass@localhost:5432/med"
+    REDIS_URL: str = "redis://localhost:6379"
+    R2_ENDPOINT_URL: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = "med-materials"
+    NEXTAUTH_SECRET: str = "dev-secret-change-in-production"
+    OPENAI_API_KEY: str = ""
+    SENTRY_DSN: str = ""
+    ENVIRONMENT: str = "development"
+
+
+settings = Settings()
