@@ -23,9 +23,15 @@ from app.schemas.material import (
 )
 from app.services.storage_service import upload_file, get_presigned_url as get_presigned_url_service
 from app.workers.arq_settings import REDIS_SETTINGS
+from app.workers.material_worker import process_material
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 logger = logging.getLogger(__name__)
+
+MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024
+MAX_TEXT_CHARS = 100_000
+MAX_NOTE_CHARS = 5_000
+SYNC_TEXT_CHARS = 10_000
 
 
 async def _get_material_or_404(material_id: UUID, user_id: str, db: AsyncSession) -> Material:
@@ -62,6 +68,22 @@ async def _mark_enqueue_failed(db: AsyncSession, material: Material) -> None:
     await db.refresh(material)
 
 
+async def _process_text_material(db: AsyncSession, material: Material) -> None:
+    """Process short text/note materials before returning, per Epic 2."""
+    if material.content and len(material.content) <= SYNC_TEXT_CHARS:
+        try:
+            await process_material(None, str(material.id))
+        except Exception:
+            logger.exception("Synchronous material processing failed for material %s", material.id)
+        await db.refresh(material)
+        return
+
+    try:
+        await _enqueue_process(material.id)
+    except Exception:
+        await _mark_enqueue_failed(db, material)
+
+
 # ---------------------------------------------------------------------------
 # Upload endpoints
 # ---------------------------------------------------------------------------
@@ -79,6 +101,11 @@ async def upload_pdf(
 
     file_bytes = await file.read()
     file_size = len(file_bytes)
+    if file_size > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Arquivo muito grande (máximo 50 MB)",
+        )
 
     # Build a unique storage key
     file_key = f"materials/{current_user['user_id']}/{uuid.uuid4()}/{file.filename}"
@@ -113,6 +140,17 @@ async def create_text_material(
 ) -> MaterialResponse:
     """Create a text or note material."""
     await _verify_topic_ownership(body.topic_id, current_user["user_id"], db)
+    content_length = len(body.content)
+    if body.type == "note" and content_length > MAX_NOTE_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Notas podem ter no máximo 5.000 caracteres",
+        )
+    if body.type == "text" and content_length > MAX_TEXT_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Textos podem ter no máximo 100.000 caracteres",
+        )
 
     material = Material(
         topic_id=body.topic_id,
@@ -126,10 +164,7 @@ async def create_text_material(
     await db.commit()
     await db.refresh(material)
 
-    try:
-        await _enqueue_process(material.id)
-    except Exception:
-        await _mark_enqueue_failed(db, material)
+    await _process_text_material(db, material)
 
     return MaterialResponse.model_validate(material)
 

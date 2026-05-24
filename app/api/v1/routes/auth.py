@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.user import LoginRequest, LoginResponse, RegisterRequest, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+DUMMY_PASSWORD_HASH = "$2b$12$YILLYIEDI4PIp57e3ednJuyECemIm2usxgBx1JkQhZnrssiB5.WIu"
 
 
 @router.post("/register", response_model=LoginResponse, status_code=status.HTTP_201_CREATED)
@@ -31,8 +32,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Login
     user = result.scalar_one_or_none()
 
     # Constant-time check prevents timing attacks / user enumeration
-    dummy_hash = "$2b$12$invalidhashinvalidhashinvalidhashinvalidhashinvalidhashXX"
-    stored = user.hashed_password.encode() if user else dummy_hash.encode()
+    stored = user.hashed_password.encode() if user else DUMMY_PASSWORD_HASH.encode()
     password_ok = bcrypt.checkpw(body.password.encode(), stored)
 
     if not user or not password_ok:

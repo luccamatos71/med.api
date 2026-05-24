@@ -1,8 +1,11 @@
+from contextlib import asynccontextmanager
+
 import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.router import router as v1_router
+from app.embedded_worker import start_embedded_worker, stop_embedded_worker
 
 if settings.SENTRY_DSN:
     sentry_sdk.init(
@@ -11,7 +14,16 @@ if settings.SENTRY_DSN:
         environment=settings.ENVIRONMENT,
     )
 
-app = FastAPI(title=".med API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await start_embedded_worker()
+    try:
+        yield
+    finally:
+        await stop_embedded_worker()
+
+
+app = FastAPI(title=".med API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

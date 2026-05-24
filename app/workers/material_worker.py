@@ -18,9 +18,10 @@ def _download_from_storage(key: str) -> bytes:
 
     Uses a synchronous S3 get_object call — acceptable in a worker process.
     """
-    from app.services.storage_service import s3
+    from app.services.storage_service import get_s3_client
     from app.core.config import settings
 
+    s3 = get_s3_client()
     response = s3.get_object(Bucket=settings.STORAGE_BUCKET_NAME, Key=key)
     return response["Body"].read()
 

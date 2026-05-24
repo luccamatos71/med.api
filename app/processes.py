@@ -24,6 +24,7 @@ async def _terminate(processes: list[tuple[str, asyncio.subprocess.Process]]) ->
 
 async def main() -> int:
     port = os.environ.get("PORT", "8000")
+    os.environ["_MED_PROCESS_SUPERVISOR"] = "1"
     commands: list[tuple[str, list[str]]] = []
 
     if os.environ.get("START_ARQ_WORKER", "1") != "0":
