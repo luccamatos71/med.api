@@ -28,16 +28,3 @@ app.include_router(v1_router, prefix="/api/v1")
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.get("/debug/db")
-async def debug_db():
-    import traceback
-    from sqlalchemy import text
-    from app.core.database import engine
-    try:
-        async with engine.connect() as conn:
-            result = await conn.execute(text("SELECT 1"))
-            return {"db": "ok", "result": result.scalar()}
-    except Exception as e:
-        return {"db": "error", "detail": str(e), "trace": traceback.format_exc()}
