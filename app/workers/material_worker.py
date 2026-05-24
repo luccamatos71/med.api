@@ -80,7 +80,7 @@ async def process_material(ctx, material_id: str) -> None:  # noqa: ARG001
                     user_id=user_id,
                     content=chunk_dict["content"],
                     embedding=embedding_vector,
-                    metadata=chunk_dict["metadata"],
+                    chunk_metadata=chunk_dict["metadata"],
                 )
                 for chunk_dict, embedding_vector in zip(chunks, embeddings)
             ]

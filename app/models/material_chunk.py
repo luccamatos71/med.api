@@ -20,7 +20,7 @@ class MaterialChunk(Base):
     )
     content = Column(Text, nullable=False)
     embedding = Column(Vector(1536), nullable=True)
-    metadata = Column(JSONB, nullable=False, default=dict)
+    chunk_metadata = Column("metadata", JSONB, nullable=False, default=dict)
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
