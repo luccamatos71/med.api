@@ -6,9 +6,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.user import LoginRequest, LoginResponse, UserResponse
+from app.schemas.user import LoginRequest, LoginResponse, RegisterRequest, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/register", response_model=LoginResponse, status_code=status.HTTP_201_CREATED)
+async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+    result = await db.execute(select(User).where(User.email == body.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+    user = User(email=body.email, hashed_password=hashed)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return LoginResponse(user_id=str(user.id), email=user.email)
 
 
 @router.post("/login", response_model=LoginResponse)
