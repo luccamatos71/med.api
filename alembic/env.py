@@ -39,7 +39,11 @@ def do_run_migrations(connection):
 
 def run_migrations_online() -> None:
     from sqlalchemy.ext.asyncio import create_async_engine
-    connectable = create_async_engine(_db_url, poolclass=pool.NullPool)
+    connectable = create_async_engine(
+        _db_url,
+        poolclass=pool.NullPool,
+        connect_args={"ssl": "require", "statement_cache_size": 0},
+    )
 
     async def run():
         async with connectable.connect() as connection:
