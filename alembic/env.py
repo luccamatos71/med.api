@@ -15,13 +15,14 @@ target_metadata = None
 
 # Override sqlalchemy.url from env var at runtime
 import os
-config.set_main_option("sqlalchemy.url", os.environ.get("DATABASE_URL", ""))
+
+# Use attributes directly to bypass configparser % interpolation
+_db_url = os.environ.get("DATABASE_URL", "")
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=_db_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -37,11 +38,8 @@ def do_run_migrations(connection):
 
 
 def run_migrations_online() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    from sqlalchemy.ext.asyncio import create_async_engine
+    connectable = create_async_engine(_db_url, poolclass=pool.NullPool)
 
     async def run():
         async with connectable.connect() as connection:
