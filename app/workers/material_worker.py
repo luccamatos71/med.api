@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.database import AsyncSessionLocal
 from app.models.material import Material
@@ -45,6 +45,8 @@ async def process_material(ctx, material_id: str) -> None:  # noqa: ARG001
         material = result.scalar_one_or_none()
         if not material:
             raise ValueError(f"Material {material_id} not found")
+        if material.processing_status == "ready":
+            return
 
         material_type = material.type
         material_file_key = material.file_key
@@ -74,6 +76,9 @@ async def process_material(ctx, material_id: str) -> None:  # noqa: ARG001
 
         # 6. Transactional insert of chunks + update material status
         async with AsyncSessionLocal() as db:
+            await db.execute(
+                delete(MaterialChunk).where(MaterialChunk.material_id == UUID(material_id))
+            )
             chunk_objects = [
                 MaterialChunk(
                     material_id=UUID(material_id),

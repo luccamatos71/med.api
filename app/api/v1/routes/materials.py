@@ -1,4 +1,5 @@
 """Materials API router — upload, CRUD, read-position endpoints."""
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List
@@ -24,6 +25,7 @@ from app.services.storage_service import upload_file, get_presigned_url as get_p
 from app.workers.arq_settings import REDIS_SETTINGS
 
 router = APIRouter(prefix="/materials", tags=["materials"])
+logger = logging.getLogger(__name__)
 
 
 async def _get_material_or_404(material_id: UUID, user_id: str, db: AsyncSession) -> Material:
@@ -49,6 +51,15 @@ async def _enqueue_process(material_id: UUID) -> None:
     redis = await create_pool(REDIS_SETTINGS)
     await redis.enqueue_job("process_material", str(material_id))
     await redis.aclose()
+
+
+async def _mark_enqueue_failed(db: AsyncSession, material: Material) -> None:
+    """Keep materials visible as failed if the queue cannot accept the job."""
+    logger.exception("Failed to enqueue material processing job for material %s", material.id)
+    material.processing_status = "failed"
+    material.processing_error = "Falha ao enfileirar processamento. Verifique REDIS_URL e o worker ARQ."
+    await db.commit()
+    await db.refresh(material)
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +97,10 @@ async def upload_pdf(
     await db.commit()
     await db.refresh(material)
 
-    await _enqueue_process(material.id)
+    try:
+        await _enqueue_process(material.id)
+    except Exception:
+        await _mark_enqueue_failed(db, material)
 
     return MaterialResponse.model_validate(material)
 
@@ -112,7 +126,10 @@ async def create_text_material(
     await db.commit()
     await db.refresh(material)
 
-    await _enqueue_process(material.id)
+    try:
+        await _enqueue_process(material.id)
+    except Exception:
+        await _mark_enqueue_failed(db, material)
 
     return MaterialResponse.model_validate(material)
 
@@ -171,7 +188,10 @@ async def retry_material(
     await db.commit()
     await db.refresh(material)
 
-    await _enqueue_process(material.id)
+    try:
+        await _enqueue_process(material.id)
+    except Exception:
+        await _mark_enqueue_failed(db, material)
 
     return MaterialResponse.model_validate(material)
 

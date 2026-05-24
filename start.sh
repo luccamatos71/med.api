@@ -15,5 +15,5 @@ if [ "$MIGRATED" = "0" ]; then
   echo "Migrations failed after 5 attempts, starting server anyway..."
 fi
 
-echo "Starting server..."
-exec /app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+echo "Starting processes..."
+exec /app/.venv/bin/python -m app.processes
