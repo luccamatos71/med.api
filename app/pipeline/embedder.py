@@ -7,6 +7,16 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 BATCH_SIZE = 100
 
 
+async def embed_text(text: str) -> list[float]:
+    """Generate a single embedding vector for one text."""
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    response = await client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text,
+    )
+    return response.data[0].embedding
+
+
 async def embed_chunks(chunks: list[dict]) -> list[list[float]]:
     """Generate embeddings for a list of chunk dicts.
 
