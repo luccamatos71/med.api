@@ -109,6 +109,8 @@ async def test_get_chat_history_returns_owned_topic_messages(client: AsyncClient
         {
             "chunk_id": data[0]["cited_chunks"][0]["chunk_id"],
             "material_title": "Aula.pdf",
+            "material_id": None,
+            "topic_id": None,
             "page_number": 3,
             "snippet": "Trecho citado",
         }

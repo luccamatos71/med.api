@@ -77,6 +77,9 @@ def _chunk_text(
             )
             idx += 1
 
+        if break_point >= text_len:
+            break
+
         # Advance with overlap
         start = max(break_point - OVERLAP_CHARS, start + 1)
 

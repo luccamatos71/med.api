@@ -13,6 +13,8 @@ class ChatRequest(BaseModel):
 class CitedChunk(BaseModel):
     chunk_id: str
     material_title: str
+    material_id: UUID | None = None
+    topic_id: UUID | None = None
     page_number: int | None = None
     snippet: str
 

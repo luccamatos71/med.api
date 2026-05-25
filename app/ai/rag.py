@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator
 from uuid import UUID
 
 from openai import APIError, APIStatusError, AsyncOpenAI
-from sqlalchemy import delete, literal, select
+from sqlalchemy import case, delete, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -21,6 +21,8 @@ K_RESULTS = 6
 SIMILARITY_THRESHOLD = 0.7
 MAX_HISTORY_MESSAGES = 20
 SUMMARY_TRIGGER_MESSAGES = 30
+MAX_HISTORY_CONTEXT_BYTES = 4000
+NOTE_RELEVANCE_WEIGHT = 0.7
 logger = logging.getLogger(__name__)
 
 
@@ -47,15 +49,57 @@ async def _topic_material_ids(db: AsyncSession, topic_id: UUID, user_id: str) ->
 async def _recent_history(
     db: AsyncSession, topic_id: UUID, user_id: str, limit: int = MAX_HISTORY_MESSAGES
 ) -> list[ChatMessage]:
+    summary_result = await db.execute(
+        select(ChatMessage)
+        .where(
+            ChatMessage.topic_id == topic_id,
+            ChatMessage.user_id == user_id,
+            ChatMessage.role == "system",
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .limit(1)
+    )
+    summary = summary_result.scalar_one_or_none()
     result = await db.execute(
         select(ChatMessage)
-        .where(ChatMessage.topic_id == topic_id, ChatMessage.user_id == user_id)
+        .where(
+            ChatMessage.topic_id == topic_id,
+            ChatMessage.user_id == user_id,
+            ChatMessage.role != "system",
+        )
         .order_by(ChatMessage.created_at.desc())
         .limit(limit)
     )
     messages = list(result.scalars().all())
     messages.reverse()
-    return messages
+    if summary:
+        messages.insert(0, summary)
+    return _trim_history_to_budget(messages)
+
+
+def _trim_history_to_budget(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """Keep latest chat context under a conservative 4,000-token ceiling."""
+    summary = next((message for message in reversed(messages) if message.role == "system"), None)
+    budget = MAX_HISTORY_CONTEXT_BYTES
+    selected: list[ChatMessage] = []
+
+    if summary:
+        summary_size = len(summary.content.encode("utf-8"))
+        if summary_size <= budget:
+            selected.append(summary)
+            budget -= summary_size
+
+    recent: list[ChatMessage] = []
+    for message in reversed(messages):
+        if message.role == "system":
+            continue
+        size = len(message.content.encode("utf-8"))
+        if size <= budget:
+            recent.append(message)
+            budget -= size
+
+    selected.extend(reversed(recent))
+    return selected
 
 
 async def _search_chunks(
@@ -70,14 +114,20 @@ async def _search_chunks(
         return []
 
     distance_expr = MaterialChunk.embedding.cosine_distance(query_embedding)
-    similarity_expr = (literal(1.0) - distance_expr).label("similarity")
+    similarity_expr = literal(1.0) - distance_expr
+    relevance_expr = (
+        similarity_expr
+        * case((Material.type == "note", NOTE_RELEVANCE_WEIGHT), else_=1.0)
+    ).label("relevance")
     stmt = (
         select(
             MaterialChunk.id,
             MaterialChunk.content,
             MaterialChunk.chunk_metadata,
             Material.title.label("material_title"),
-            similarity_expr,
+            Material.id.label("material_id"),
+            Material.topic_id.label("topic_id"),
+            relevance_expr,
         )
         .join(Material, Material.id == MaterialChunk.material_id)
         .where(
@@ -86,7 +136,7 @@ async def _search_chunks(
             MaterialChunk.embedding.is_not(None),
             similarity_expr >= threshold,
         )
-        .order_by(distance_expr.asc())
+        .order_by(relevance_expr.desc())
         .limit(k)
     )
     result = await db.execute(stmt)
@@ -98,7 +148,9 @@ async def _search_chunks(
                 "content": row.content,
                 "metadata": row.chunk_metadata or {},
                 "material_title": row.material_title,
-                "similarity": float(row.similarity) if row.similarity is not None else 0.0,
+                "material_id": row.material_id,
+                "topic_id": row.topic_id,
+                "similarity": float(row.relevance) if row.relevance is not None else 0.0,
             }
         )
     return rows
@@ -313,6 +365,8 @@ async def stream_chat(
             {
                 "chunk_id": str(chunk["id"]),
                 "material_title": chunk["material_title"],
+                "material_id": str(chunk["material_id"]),
+                "topic_id": str(chunk["topic_id"]),
                 "page_number": meta.get("page_number"),
                 "snippet": chunk["content"][:180],
             }

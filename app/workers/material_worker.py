@@ -10,7 +10,7 @@ from app.models.material import Material
 from app.models.material_chunk import MaterialChunk
 from app.pipeline.chunker import chunk_pages, chunk_text
 from app.pipeline.embedder import embed_chunks
-from app.pipeline.pdf_parser import parse_pdf
+from app.pipeline.pdf_parser import PdfHasNoExtractableTextError, parse_pdf
 
 
 def _download_from_storage(key: str) -> bytes:
@@ -63,7 +63,22 @@ async def process_material(ctx, material_id: str) -> None:  # noqa: ARG001
             if not material_file_key:
                 raise ValueError("Material do tipo PDF não tem file_key")
             file_bytes = await asyncio.to_thread(_download_from_storage, material_file_key)
-            pages = parse_pdf(file_bytes)
+            try:
+                pages = parse_pdf(file_bytes)
+            except PdfHasNoExtractableTextError as exc:
+                async with AsyncSessionLocal() as db:
+                    await db.execute(
+                        delete(MaterialChunk).where(MaterialChunk.material_id == UUID(material_id))
+                    )
+                    result = await db.execute(
+                        select(Material).where(Material.id == UUID(material_id))
+                    )
+                    material_obj = result.scalar_one()
+                    material_obj.processing_status = "ready"
+                    material_obj.processed_at = datetime.now(timezone.utc)
+                    material_obj.processing_error = str(exc)
+                    await db.commit()
+                return
             chunks = chunk_pages(pages)
         else:
             # text or note

@@ -15,6 +15,7 @@ from app.core.deps import get_current_user
 from app.models.material import Material
 from app.models.material_read_position import MaterialReadPosition
 from app.models.topic import Topic
+from app.pipeline.pdf_parser import validate_pdf
 from app.schemas.material import (
     MaterialCreate,
     MaterialResponse,
@@ -107,9 +108,24 @@ async def upload_pdf(
             detail="Arquivo muito grande (máximo 50 MB)",
         )
 
-    # Build a unique storage key
-    file_key = f"materials/{current_user['user_id']}/{uuid.uuid4()}/{file.filename}"
-    await upload_file(file_bytes, file_key, file.content_type or "application/pdf")
+    try:
+        validate_pdf(file_bytes)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    # Store with a provider-safe key; preserve the original name as display metadata.
+    file_key = f"materials/{current_user['user_id']}/{uuid.uuid4()}/material.pdf"
+    try:
+        await upload_file(file_bytes, file_key, "application/pdf")
+    except Exception as exc:
+        logger.exception("Failed to store PDF for user %s", current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Nao foi possivel armazenar o PDF. Tente novamente.",
+        ) from exc
 
     material = Material(
         topic_id=topic_id,

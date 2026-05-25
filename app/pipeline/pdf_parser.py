@@ -4,6 +4,22 @@ from typing import Optional
 import fitz  # PyMuPDF
 
 
+class PdfHasNoExtractableTextError(ValueError):
+    """Raised when a valid PDF is viewable but cannot feed Tutor search."""
+
+
+def validate_pdf(file_bytes: bytes) -> None:
+    """Reject malformed payloads before storing them as PDF materials."""
+    try:
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            if len(doc) == 0:
+                raise ValueError("Arquivo invalido. Envie um PDF valido.")
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Arquivo invalido. Envie um PDF valido.") from exc
+
+
 def parse_pdf(file_bytes: bytes) -> list[dict]:
     """Extract text from a PDF file page by page.
 
@@ -14,7 +30,8 @@ def parse_pdf(file_bytes: bytes) -> list[dict]:
         List of dicts with keys: text, page_number, section.
 
     Raises:
-        ValueError: If the PDF contains no extractable text (likely a scanned image).
+        PdfHasNoExtractableTextError: If the PDF is viewable but contains no
+            extractable text for Tutor grounding.
     """
     with fitz.open(stream=file_bytes, filetype="pdf") as doc:
         pages: list[dict] = []
@@ -32,8 +49,8 @@ def parse_pdf(file_bytes: bytes) -> list[dict]:
 
     total_text = "".join(p["text"].strip() for p in pages)
     if not total_text:
-        raise ValueError(
-            "PDF parece ser uma imagem. Tenta colar o texto manualmente?"
+        raise PdfHasNoExtractableTextError(
+            "PDF disponivel para leitura, mas sem texto extraivel para o Tutor."
         )
 
     return pages
