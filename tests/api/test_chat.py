@@ -4,8 +4,9 @@ from uuid import uuid4
 
 import jwt
 from httpx import AsyncClient
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+from app.ai.rag import _maybe_summarize_history
 from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
@@ -35,16 +36,21 @@ class _FakeSession:
     def __init__(self, results):
         self._results = list(results)
         self.statements = []
+        self.added = []
+        self.commits = 0
 
     async def execute(self, statement):
         self.statements.append(statement)
         return self._results.pop(0)
 
     async def commit(self):
-        return None
+        self.commits += 1
 
     async def refresh(self, _obj):
         return None
+
+    def add(self, obj):
+        self.added.append(obj)
 
 
 def _auth_header(user_id):
@@ -220,3 +226,35 @@ async def test_chat_stream_logs_and_emits_error_event_on_failure(client: AsyncCl
     assert response.status_code == 200
     assert '"type": "error"' in response.text
     assert "Chat stream failed" in caplog.text
+
+
+async def test_long_chat_history_is_compressed_into_system_summary():
+    user_id = uuid4()
+    topic_id = uuid4()
+    messages = [
+        SimpleNamespace(id=uuid4(), role="user", content=f"Mensagem {index}")
+        for index in range(31)
+    ]
+    session = _FakeSession([_Result(scalars=messages), _Result()])
+    summary_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Resumo consolidado."))]
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(return_value=summary_response))
+        )
+    )
+
+    original_key = settings.OPENAI_API_KEY
+    settings.OPENAI_API_KEY = "test-key"
+    try:
+        with patch("app.ai.rag.AsyncOpenAI", return_value=client):
+            await _maybe_summarize_history(session, topic_id, str(user_id))
+    finally:
+        settings.OPENAI_API_KEY = original_key
+
+    assert len(session.statements) == 2
+    assert session.commits == 1
+    assert len(session.added) == 1
+    assert session.added[0].role == "system"
+    assert session.added[0].content == "Resumo consolidado."
