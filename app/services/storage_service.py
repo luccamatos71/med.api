@@ -1,6 +1,7 @@
 import asyncio
 
 import boto3
+from botocore.config import Config
 from app.core.config import settings
 
 _s3 = None
@@ -21,6 +22,7 @@ def get_s3_client():
             aws_access_key_id=settings.STORAGE_ACCESS_KEY_ID,
             aws_secret_access_key=settings.STORAGE_SECRET_ACCESS_KEY,
             region_name="us-east-1",
+            config=Config(signature_version="s3v4"),
         )
 
     return _s3
