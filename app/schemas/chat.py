@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     question: str
     selected_text: str | None = None
+    active_material_id: UUID | None = None
 
 
 class CitedChunk(BaseModel):

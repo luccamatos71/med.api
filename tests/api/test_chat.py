@@ -199,6 +199,79 @@ async def test_chat_stream_returns_sse_events(client: AsyncClient):
     assert '"type":"done"' in text
 
 
+async def test_chat_stream_forwards_active_material_id(client: AsyncClient):
+    user_id = uuid4()
+    topic_id = uuid4()
+    subtopic_id = uuid4()
+    active_material_id = uuid4()
+    session = _FakeSession(
+        [
+            _Result(scalar=SimpleNamespace(id=topic_id, user_id=user_id)),
+            _Result(scalars=[subtopic_id]),
+            _Result(scalar=active_material_id),
+        ]
+    )
+
+    async def fake_get_db():
+        yield session
+
+    captured_kwargs = {}
+
+    async def fake_stream_chat(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        yield 'data: {"type":"done","message_id":"abc"}\n\n'
+
+    original_key = settings.OPENAI_API_KEY
+    settings.OPENAI_API_KEY = "test-key"
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        with patch("app.api.v1.routes.chat.stream_chat", fake_stream_chat):
+            response = await client.post(
+                f"/api/v1/topics/{topic_id}/chat/stream",
+                headers=_auth_header(user_id),
+                json={"question": "Oi?", "active_material_id": str(active_material_id)},
+            )
+    finally:
+        settings.OPENAI_API_KEY = original_key
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert captured_kwargs["active_material_id"] == active_material_id
+
+
+async def test_chat_stream_rejects_active_material_outside_scope(client: AsyncClient):
+    user_id = uuid4()
+    topic_id = uuid4()
+    subtopic_id = uuid4()
+    active_material_id = uuid4()
+    session = _FakeSession(
+        [
+            _Result(scalar=SimpleNamespace(id=topic_id, user_id=user_id)),
+            _Result(scalars=[subtopic_id]),
+            _Result(scalar=None),
+        ]
+    )
+
+    async def fake_get_db():
+        yield session
+
+    original_key = settings.OPENAI_API_KEY
+    settings.OPENAI_API_KEY = "test-key"
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        response = await client.post(
+            f"/api/v1/topics/{topic_id}/chat/stream",
+            headers=_auth_header(user_id),
+            json={"question": "Oi?", "active_material_id": str(active_material_id)},
+        )
+    finally:
+        settings.OPENAI_API_KEY = original_key
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Active material not found in topic scope"}
+
+
 async def test_chat_stream_logs_and_emits_error_event_on_failure(client: AsyncClient, caplog):
     user_id = uuid4()
     topic_id = uuid4()

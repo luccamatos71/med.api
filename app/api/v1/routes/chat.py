@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.chat_message import ChatMessage
+from app.models.material import Material
 from app.models.topic import Topic
 from app.schemas.chat import ChatMessageResponse, ChatRequest
 
@@ -26,6 +27,35 @@ async def _verify_topic_ownership(topic_id: UUID, user_id: str, db: AsyncSession
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+
+
+async def _topic_scope_ids(topic_id: UUID, user_id: str, db: AsyncSession) -> list[UUID]:
+    subtopics_res = await db.execute(
+        select(Topic.id).where(Topic.parent_topic_id == topic_id, Topic.user_id == user_id)
+    )
+    return [topic_id, *subtopics_res.scalars().all()]
+
+
+async def _validate_active_material_scope(
+    *,
+    topic_id: UUID,
+    active_material_id: UUID,
+    user_id: str,
+    db: AsyncSession,
+) -> None:
+    scope_topic_ids = await _topic_scope_ids(topic_id, user_id, db)
+    result = await db.execute(
+        select(Material.id).where(
+            Material.id == active_material_id,
+            Material.user_id == user_id,
+            Material.topic_id.in_(scope_topic_ids),
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active material not found in topic scope",
+        )
 
 
 @router.get("/{topic_id}/chat/messages", response_model=List[ChatMessageResponse])
@@ -55,6 +85,13 @@ async def chat_stream(
 ) -> StreamingResponse:
     user_id = current_user["user_id"]
     await _verify_topic_ownership(topic_id, user_id, db)
+    if body.active_material_id:
+        await _validate_active_material_scope(
+            topic_id=topic_id,
+            active_material_id=body.active_material_id,
+            user_id=user_id,
+            db=db,
+        )
     if not settings.OPENAI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -69,6 +106,7 @@ async def chat_stream(
                 user_id=user_id,
                 question=body.question,
                 selected_text=body.selected_text,
+                active_material_id=body.active_material_id,
             ):
                 yield event
         except Exception:

@@ -106,6 +106,90 @@ async def test_create_doubt_returns_201(client: AsyncClient):
     assert data["subject_name"] == "Cardiologia"
 
 
+async def test_create_doubt_accepts_material_inside_topic_scope(client: AsyncClient):
+    user_id = uuid4()
+    topic_id = uuid4()
+    subtopic_id = uuid4()
+    subject_id = uuid4()
+    material_id = uuid4()
+    session = _FakeSession(
+        [
+            _Result(
+                scalar=SimpleNamespace(
+                    id=topic_id,
+                    name="ICC",
+                    subject_id=subject_id,
+                    user_id=user_id,
+                )
+            ),
+            _Result(scalars=[subtopic_id]),
+            _Result(scalar=material_id),
+            _Result(scalar="Cardiologia"),
+        ]
+    )
+
+    async def fake_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        response = await client.post(
+            "/api/v1/doubts",
+            headers=_auth_header(user_id),
+            json={
+                "topic_id": str(topic_id),
+                "material_id": str(material_id),
+                "question": "Fonte correta?",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["material_id"] == str(material_id)
+
+
+async def test_create_doubt_rejects_material_outside_topic_scope(client: AsyncClient):
+    user_id = uuid4()
+    topic_id = uuid4()
+    subject_id = uuid4()
+    material_id = uuid4()
+    session = _FakeSession(
+        [
+            _Result(
+                scalar=SimpleNamespace(
+                    id=topic_id,
+                    name="ICC",
+                    subject_id=subject_id,
+                    user_id=user_id,
+                )
+            ),
+            _Result(scalars=[]),
+            _Result(scalar=None),
+        ]
+    )
+
+    async def fake_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_get_db
+    try:
+        response = await client.post(
+            "/api/v1/doubts",
+            headers=_auth_header(user_id),
+            json={
+                "topic_id": str(topic_id),
+                "material_id": str(material_id),
+                "question": "Fonte indevida?",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Material not found in topic scope"}
+
+
 async def test_list_doubts_returns_rows(client: AsyncClient):
     user_id = uuid4()
     topic_id = uuid4()

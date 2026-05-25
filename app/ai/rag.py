@@ -107,6 +107,7 @@ async def _search_chunks(
     query_embedding: list[float],
     material_ids: list[UUID],
     user_id: str,
+    active_material_id: UUID | None = None,
     k: int = K_RESULTS,
     threshold: float = SIMILARITY_THRESHOLD,
 ) -> list[dict[str, Any]]:
@@ -119,6 +120,11 @@ async def _search_chunks(
         similarity_expr
         * case((Material.type == "note", NOTE_RELEVANCE_WEIGHT), else_=1.0)
     ).label("relevance")
+    priority_expr = (
+        case((Material.id == active_material_id, 1), else_=0).label("active_material_priority")
+        if active_material_id
+        else literal(0).label("active_material_priority")
+    )
     stmt = (
         select(
             MaterialChunk.id,
@@ -127,6 +133,7 @@ async def _search_chunks(
             Material.title.label("material_title"),
             Material.id.label("material_id"),
             Material.topic_id.label("topic_id"),
+            priority_expr,
             relevance_expr,
         )
         .join(Material, Material.id == MaterialChunk.material_id)
@@ -136,7 +143,7 @@ async def _search_chunks(
             MaterialChunk.embedding.is_not(None),
             similarity_expr >= threshold,
         )
-        .order_by(relevance_expr.desc())
+        .order_by(priority_expr.desc(), relevance_expr.desc())
         .limit(k)
     )
     result = await db.execute(stmt)
@@ -161,11 +168,19 @@ def _build_messages(
     chunks: list[dict[str, Any]],
     history: list[ChatMessage],
     selected_text: str | None = None,
+    general_knowledge: bool = False,
 ) -> list[dict[str, str]]:
     system_text = (
-        "Você é um tutor médico sênior para estudo. "
-        "Responda de forma clara e objetiva com base nos materiais fornecidos. "
-        "Se não houver base suficiente nos materiais, diga explicitamente."
+        "Você é um tutor de estudos em saúde que explica em português natural, próximo e rigoroso. "
+        "Comece pela lógica principal da dúvida e responda primeiro ao que foi perguntado. "
+        "Quando ajudar, use expressões naturais como 'Pensa assim...', 'A confusão está aqui...' ou "
+        "'Grava assim...', analogias simples e sequências com setas. "
+        "Se a estudante estiver parcialmente certa, corrija sem invalidar o raciocínio. "
+        "Evite aula longa, tom de manual e estruturas fixas com subtítulos obrigatórios. "
+        "Use os materiais recuperados e o trecho selecionado (quando houver) como base prioritária. "
+        "Nunca afirme que um material diz algo, nunca cite página e nunca declare fonte se isso não estiver "
+        "explicitamente no contexto recuperado desta conversa. "
+        "Não escreva uma seção de fontes: a aplicação adiciona fontes reais separadamente."
     )
     context_parts: list[str] = []
     for chunk in chunks:
@@ -178,6 +193,18 @@ def _build_messages(
     messages: list[dict[str, str]] = [{"role": "system", "content": system_text}]
     if context_text:
         messages.append({"role": "system", "content": f"Materiais do estudante:\n\n{context_text}"})
+    elif general_knowledge:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Nenhum trecho relevante foi recuperado dos materiais deste tópico. "
+                    "Responda usando conhecimento geral confiável, sem alegar grounding em material, "
+                    "sem mencionar fontes ou páginas e sem repetir o aviso de ausência de fonte, "
+                    "pois a aplicação já o exibiu."
+                ),
+            }
+        )
 
     for msg in history:
         if msg.role in ("user", "assistant"):
@@ -290,37 +317,37 @@ async def stream_chat(
     user_id: str,
     question: str,
     selected_text: str | None = None,
+    active_material_id: UUID | None = None,
 ) -> AsyncIterator[str]:
     query_text = f"{selected_text}\n\n{question}" if selected_text else question
     embedding = await embed_text(query_text)
     material_ids = await _topic_material_ids(db, topic_id, user_id)
-    chunks = await _search_chunks(db, embedding, material_ids, user_id)
+    chunks = await _search_chunks(
+        db,
+        embedding,
+        material_ids,
+        user_id,
+        active_material_id=active_material_id,
+    )
 
     fallback = (
-        "Não encontrei informação suficiente nos seus materiais sobre isso. "
-        "Tente adicionar um material relevante."
+        "Não encontrei isso diretamente nos materiais deste tópico, então vou te explicar pela lógica geral."
     )
-    if len(chunks) < 2:
+    general_knowledge = not chunks and not selected_text
+    if general_knowledge:
         logger.info(
-            "RAG fallback due to insufficient chunks",
-            extra={"topic_id": str(topic_id), "user_id": user_id, "chunks_found": len(chunks)},
+            "RAG answering with general knowledge due to no recovered chunks",
+            extra={"topic_id": str(topic_id), "user_id": user_id},
         )
-        assistant = await _save_messages(
-            db,
-            topic_id=topic_id,
-            user_id=user_id,
-            question=question,
-            answer=fallback,
-            cited_chunks=[],
-            tokens_used=None,
-        )
-        yield _sse({"type": "token", "content": fallback})
-        yield _sse({"type": "source", "chunks": []})
-        yield _sse({"type": "done", "message_id": str(assistant.id)})
-        return
 
     history = await _recent_history(db, topic_id, user_id)
-    messages = _build_messages(question, chunks, history, selected_text)
+    messages = _build_messages(
+        question,
+        chunks,
+        history,
+        selected_text,
+        general_knowledge=general_knowledge,
+    )
 
     if not settings.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not configured")
@@ -333,6 +360,9 @@ async def stream_chat(
     )
 
     full_response = ""
+    if general_knowledge:
+        full_response = f"{fallback}\n\n"
+        yield _sse({"type": "token", "content": full_response})
     completion_tokens: int | None = None
     try:
         async for chunk in stream:

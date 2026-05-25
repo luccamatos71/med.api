@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.doubt import Doubt
 from app.models.flashcard import Flashcard
+from app.models.material import Material
 from app.models.subject import Subject
 from app.models.topic import Topic
 from app.schemas.doubt import (
@@ -43,6 +44,27 @@ async def _get_doubt_or_404(doubt_id: UUID, user_id: str, db: AsyncSession) -> D
     return doubt
 
 
+async def _verify_material_in_topic_scope(
+    material_id: UUID, topic_id: UUID, user_id: str, db: AsyncSession
+) -> None:
+    subtopics_res = await db.execute(
+        select(Topic.id).where(Topic.parent_topic_id == topic_id, Topic.user_id == user_id)
+    )
+    scope_topic_ids = [topic_id, *subtopics_res.scalars().all()]
+    material_res = await db.execute(
+        select(Material.id).where(
+            Material.id == material_id,
+            Material.user_id == user_id,
+            Material.topic_id.in_(scope_topic_ids),
+        )
+    )
+    if not material_res.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Material not found in topic scope",
+        )
+
+
 def _to_response(row) -> DoubtResponse:
     doubt = row[0] if isinstance(row, tuple) else row.Doubt
     topic_name = row[1] if isinstance(row, tuple) else row.topic_name
@@ -61,6 +83,8 @@ async def create_doubt(
 ) -> DoubtResponse:
     user_id = current_user["user_id"]
     topic = await _verify_topic_ownership(body.topic_id, user_id, db)
+    if body.material_id:
+        await _verify_material_in_topic_scope(body.material_id, body.topic_id, user_id, db)
 
     doubt = Doubt(
         user_id=user_id,
