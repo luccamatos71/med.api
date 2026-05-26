@@ -16,8 +16,10 @@ target_metadata = None
 # Override sqlalchemy.url from env var at runtime
 import os
 
+from app.core.config import settings
+
 # Use attributes directly to bypass configparser % interpolation
-_db_url = os.environ.get("DATABASE_URL", "")
+_db_url = os.environ.get("DATABASE_URL", "").strip() or settings.DATABASE_URL
 
 
 def run_migrations_offline() -> None:
