@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.material import Material
 from app.core.config import settings
+from app.workers.flashcard_worker import generate_flashcards
 from app.workers.material_worker import process_material
 
 REDIS_SETTINGS = RedisSettings.from_dsn(settings.REDIS_URL)
@@ -61,4 +62,4 @@ class WorkerSettings:
     job_timeout = 300
     max_tries = 3
     on_startup = requeue_stale_materials
-    functions = [process_material]
+    functions = [process_material, generate_flashcards]

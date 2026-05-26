@@ -210,9 +210,11 @@ async def resolve_doubt(
             user_id=user_id,
             topic_id=doubt.topic_id,
             material_id=doubt.material_id,
+            doubt_id=doubt.id,
             source="from_doubt",
             front=doubt.question,
             back=doubt.ai_answer or "",
+            source_snippet=doubt.question[:240],
             ai_approved_at=None,
         )
         db.add(flashcard)
