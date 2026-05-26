@@ -60,11 +60,7 @@ async def _verify_material_scope(material_id: UUID, user_id: str, db: AsyncSessi
 
 
 def _row_to_response(row) -> FlashcardResponse:
-    flashcard = row[0] if isinstance(row, tuple) else row.Flashcard
-    topic_name = row[1] if isinstance(row, tuple) else row.topic_name
-    subject_name = row[2] if isinstance(row, tuple) else row.subject_name
-    material_title = row[3] if isinstance(row, tuple) else row.material_title
-    subject_id = row[4] if isinstance(row, tuple) else row.subject_id
+    flashcard, topic_name, subject_name, material_title, subject_id = row
     response = FlashcardResponse.model_validate(flashcard)
     response.subject_id = subject_id
     response.topic_name = topic_name
