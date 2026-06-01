@@ -111,6 +111,7 @@ async def test_get_chat_history_returns_owned_topic_messages(client: AsyncClient
             "material_title": "Aula.pdf",
             "material_id": None,
             "topic_id": None,
+            "subject_id": None,
             "page_number": 3,
             "snippet": "Trecho citado",
         }
