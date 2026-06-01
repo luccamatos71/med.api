@@ -12,7 +12,12 @@ class ChatMessage(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="CASCADE"), nullable=False)
+    # Legacy topic-scoped chat keeps topic_id; the conversational assistant uses
+    # conversation_id. At least one is set.
+    topic_id = Column(UUID(as_uuid=True), ForeignKey("topics.id", ondelete="CASCADE"), nullable=True)
+    conversation_id = Column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+    )
     role = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     cited_chunks = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
@@ -26,4 +31,5 @@ class ChatMessage(Base):
     __table_args__ = (
         Index("ix_chat_messages_topic_id", "topic_id"),
         Index("ix_chat_messages_user_id", "user_id"),
+        Index("ix_chat_messages_conversation_id", "conversation_id"),
     )
