@@ -162,3 +162,69 @@ async def test_assistant_grounds_in_materials_and_emits_real_source(monkeypatch)
     assert cited["subject_id"] == str(subject_id)
     assert cited["page_number"] == 7
     assert any("Trechos dos materiais da estudante:" in m["content"] for m in captured["messages"])
+
+
+@pytest.mark.asyncio
+async def test_material_context_drops_threshold_and_scopes_search(monkeypatch):
+    """In-material questions must always reach the PDF (no relevance gate)."""
+    user_id = str(uuid4())
+    material_id = uuid4()
+    captured = {}
+
+    async def fake_embed_text(_text):
+        return [0.1]
+
+    async def fake_search(_db, _emb, _user, material_ids, **kwargs):
+        captured["material_ids"] = material_ids
+        captured["threshold"] = kwargs.get("threshold")
+        captured["active_material_id"] = kwargs.get("active_material_id")
+        return []
+
+    async def fake_history(*_args, **_kwargs):
+        return []
+
+    async def fake_save(*_args, **kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def fake_title(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(assistant, "embed_text", fake_embed_text)
+    monkeypatch.setattr(assistant, "_search_chunks", fake_search)
+    monkeypatch.setattr(assistant, "_conversation_history", fake_history)
+    monkeypatch.setattr(assistant, "_save_messages", fake_save)
+    monkeypatch.setattr(assistant, "_maybe_set_title", fake_title)
+    monkeypatch.setattr(assistant, "AsyncOpenAI", lambda **_kwargs: _fake_client(captured))
+    monkeypatch.setattr(assistant.settings, "OPENAI_API_KEY", "test-key")
+
+    conversation = SimpleNamespace(
+        id=uuid4(), title="PDF", topic_id=None, material_id=material_id
+    )
+
+    # 1. Material in focus -> zero threshold, scoped to that material.
+    _ = [
+        e
+        async for e in assistant.stream_assistant(
+            SimpleNamespace(),
+            conversation=conversation,
+            user_id=user_id,
+            question="do que se trata esse pdf?",
+        )
+    ]
+    assert captured["material_ids"] == [material_id]
+    assert captured["threshold"] == assistant.CONTEXT_SIMILARITY_THRESHOLD
+    assert captured["active_material_id"] == material_id
+
+    # 2. General tab (no material) -> global search with realistic gate.
+    general = SimpleNamespace(id=uuid4(), title="Geral", topic_id=None, material_id=None)
+    _ = [
+        e
+        async for e in assistant.stream_assistant(
+            SimpleNamespace(),
+            conversation=general,
+            user_id=user_id,
+            question="o que diz meu material sobre AVC?",
+        )
+    ]
+    assert captured["material_ids"] is None
+    assert captured["threshold"] == assistant.GLOBAL_SIMILARITY_THRESHOLD
