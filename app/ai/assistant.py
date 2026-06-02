@@ -27,8 +27,13 @@ from app.pipeline.embedder import embed_text
 
 CHAT_MODEL = "gpt-4o"
 TITLE_MODEL = "gpt-4o-mini"
-K_RESULTS = 6
-SIMILARITY_THRESHOLD = 0.72
+K_RESULTS = 8
+# Cosine similarity for text-embedding-3-small: good matches land ~0.3-0.5,
+# so a 0.7 gate only passes near-identical text (e.g. a pasted selection).
+# Global search uses a realistic relevance gate; when a material is in focus we
+# drop the gate entirely and always surface its most relevant chunks.
+GLOBAL_SIMILARITY_THRESHOLD = 0.32
+CONTEXT_SIMILARITY_THRESHOLD = 0.0
 MAX_HISTORY_MESSAGES = 20
 MAX_HISTORY_CONTEXT_BYTES = 6000
 NOTE_RELEVANCE_WEIGHT = 0.7
@@ -56,15 +61,6 @@ SYSTEM_PROMPT = (
 )
 
 
-async def _user_material_ids(
-    db: AsyncSession, user_id: str, material_id: UUID | None
-) -> list[UUID] | None:
-    """Materials to search. ``None`` = search all ready materials for the user."""
-    if material_id is not None:
-        return [material_id]
-    return None
-
-
 async def _search_chunks(
     db: AsyncSession,
     query_embedding: list[float],
@@ -72,7 +68,7 @@ async def _search_chunks(
     material_ids: list[UUID] | None,
     active_material_id: UUID | None = None,
     k: int = K_RESULTS,
-    threshold: float = SIMILARITY_THRESHOLD,
+    threshold: float = GLOBAL_SIMILARITY_THRESHOLD,
 ) -> list[dict[str, Any]]:
     distance_expr = MaterialChunk.embedding.cosine_distance(query_embedding)
     similarity_expr = literal(1.0) - distance_expr
@@ -279,13 +275,24 @@ async def stream_assistant(
 
     query_text = f"{selected_text}\n\n{question}" if selected_text else question
     embedding = await embed_text(query_text)
-    material_ids = await _user_material_ids(db, user_id, context_material_id)
+
+    if context_material_id is not None:
+        # A material is in focus (material panel, or a material-bound conversation):
+        # always surface its most relevant chunks, no relevance gate.
+        material_ids: list[UUID] | None = [context_material_id]
+        threshold = CONTEXT_SIMILARITY_THRESHOLD
+    else:
+        # General tab: search across all the user's materials with a realistic gate.
+        material_ids = None
+        threshold = GLOBAL_SIMILARITY_THRESHOLD
+
     chunks = await _search_chunks(
         db,
         embedding,
         user_id,
         material_ids,
         active_material_id=context_material_id,
+        threshold=threshold,
     )
 
     history = await _conversation_history(db, conversation.id, user_id)
