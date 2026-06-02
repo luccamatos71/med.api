@@ -12,6 +12,8 @@ from app.models.flashcard import Flashcard
 from app.models.flashcard_review import FlashcardReview
 from app.models.review_log import ReviewLog
 from app.models.doubt import Doubt
+from app.models.exam import ExamSession
+from app.models.study_plan import StudyPlan
 
 __all__ = [
     "Base",
@@ -28,4 +30,6 @@ __all__ = [
     "FlashcardReview",
     "ReviewLog",
     "Doubt",
+    "ExamSession",
+    "StudyPlan",
 ]

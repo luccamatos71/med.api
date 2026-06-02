@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from app.api.v1.routes.assistant import router as assistant_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.chat import router as chat_router
+from app.api.v1.routes.exams import router as exams_router
+from app.api.v1.routes.study_plans import router as study_plans_router
 from app.api.v1.routes.doubts import router as doubts_router
 from app.api.v1.routes.doubts import topics_doubts_router
 from app.api.v1.routes.flashcards import materials_flashcards_router
@@ -26,3 +28,5 @@ router.include_router(doubts_router)
 router.include_router(topics_doubts_router)
 router.include_router(flashcards_router)
 router.include_router(reviews_router)
+router.include_router(exams_router)
+router.include_router(study_plans_router)
