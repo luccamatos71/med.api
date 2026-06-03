@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.exam import ExamSession
+from app.models.flashcard import Flashcard
+from app.models.flashcard_review import FlashcardReview
 from app.models.material import Material
 from app.models.material_chunk import MaterialChunk
 from app.models.subject import Subject
@@ -17,10 +19,13 @@ from app.models.topic import Topic
 from app.schemas.exam import (
     ExamAnswers,
     ExamCreate,
+    ExamHistory,
+    ExamHistoryItem,
     ExamQuestionPublic,
     ExamQuestionResult,
     ExamResult,
     ExamSessionPublic,
+    WrongToFlashcardsResult,
 )
 from app.services.exam_generator import generate_exam_from_chunks
 
@@ -157,6 +162,28 @@ async def create_exam(
     return _public(exam)
 
 
+@router.get("", response_model=ExamHistory)
+async def list_exams(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExamHistory:
+    user_id = current_user["user_id"]
+    res = await db.execute(
+        select(ExamSession)
+        .where(ExamSession.user_id == user_id)
+        .order_by(ExamSession.created_at.desc())
+        .limit(50)
+    )
+    items = list(res.scalars().all())
+    finished = [e for e in items if e.status == "finished" and e.score is not None]
+    avg = round(sum(e.score for e in finished) / len(finished), 1) if finished else None
+    return ExamHistory(
+        average_score=avg,
+        total_exams=len(finished),
+        items=[ExamHistoryItem.model_validate(e) for e in items],
+    )
+
+
 async def _get_exam(exam_id: UUID, user_id: str, db: AsyncSession) -> ExamSession:
     res = await db.execute(
         select(ExamSession).where(ExamSession.id == exam_id, ExamSession.user_id == user_id)
@@ -197,3 +224,59 @@ async def finish_exam(
     await db.commit()
     await db.refresh(exam)
     return _result(exam)
+
+
+@router.post("/{exam_id}/wrong-to-flashcards", response_model=WrongToFlashcardsResult)
+async def wrong_to_flashcards(
+    exam_id: UUID,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WrongToFlashcardsResult:
+    """Turn the questions the student got wrong into review flashcards."""
+    user_id = current_user["user_id"]
+    exam = await _get_exam(exam_id, user_id, db)
+    if exam.status != "finished":
+        raise HTTPException(status_code=409, detail="Finalize a prova primeiro.")
+
+    if exam.scope_type == "topic":
+        topic_id = exam.scope_id
+    else:
+        r = await db.execute(
+            select(Topic.id).where(Topic.subject_id == exam.scope_id, Topic.user_id == user_id).limit(1)
+        )
+        topic_id = r.scalar_one_or_none()
+    if not topic_id:
+        raise HTTPException(status_code=409, detail="Sem tópico para vincular os flashcards.")
+
+    answers = exam.answers_json or {}
+    now = datetime.now(timezone.utc)
+    created = 0
+    for i, q in enumerate(exam.questions_json):
+        if answers.get(str(i)) == q["correct_index"]:
+            continue
+        correct_text = q["options"][q["correct_index"]]
+        back = correct_text
+        if q.get("explanation"):
+            back = f"{correct_text}\n\n{q['explanation']}"
+        flashcard = Flashcard(
+            user_id=user_id,
+            topic_id=topic_id,
+            source="manual",
+            front=q["stem"],
+            back=back,
+            ai_approved_at=now,
+            created_at=now,
+        )
+        db.add(flashcard)
+        await db.flush()
+        db.add(
+            FlashcardReview(
+                flashcard_id=flashcard.id,
+                user_id=user_id,
+                state="new",
+                due_date=now,
+            )
+        )
+        created += 1
+    await db.commit()
+    return WrongToFlashcardsResult(created=created)

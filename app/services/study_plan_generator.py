@@ -23,7 +23,9 @@ def build_plan(
     today: date,
     exam_date: date,
     topics: list[dict[str, Any]],  # [{id, name, subject_id, subject_name}]
+    due_by_date: dict[str, int] | None = None,  # ISO date -> count of FSRS cards due
 ) -> dict[str, Any]:
+    due_by_date = due_by_date or {}
     total_days = (exam_date - today).days
     if total_days < 1:
         total_days = 1
@@ -51,9 +53,13 @@ def build_plan(
                 "subject_id": str(t["subject_id"]) if t.get("subject_id") else None,
             })
 
-        # Spaced review every 2 days (and daily in the final week)
+        # Real FSRS reviews due this day take priority; otherwise a spaced
+        # review every 2 days (and daily in the final week).
+        due_count = due_by_date.get(current.isoformat(), 0)
         in_final_week = (total_days - offset) <= 7
-        if offset > 0 and (offset % 2 == 0 or in_final_week):
+        if due_count > 0:
+            tasks.append({"type": "review", "label": f"Revisar {due_count} flashcard(s) agendado(s)", "topic_id": None, "subject_id": None})
+        elif offset > 0 and (offset % 2 == 0 or in_final_week):
             tasks.append({"type": "review", "label": "Revisar flashcards do dia", "topic_id": None, "subject_id": None})
 
         # Weekly mock exam, plus one the day before the exam

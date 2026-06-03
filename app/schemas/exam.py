@@ -55,3 +55,27 @@ class ExamResult(BaseModel):
     correct: int
     duration_seconds: int | None
     questions: list[ExamQuestionResult]
+
+
+class ExamHistoryItem(BaseModel):
+    id: UUID
+    scope_type: str
+    scope_id: UUID
+    scope_name: str | None
+    num_questions: int
+    status: str
+    score: float | None
+    created_at: datetime
+    finished_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class ExamHistory(BaseModel):
+    average_score: float | None
+    total_exams: int
+    items: list[ExamHistoryItem]
+
+
+class WrongToFlashcardsResult(BaseModel):
+    created: int
