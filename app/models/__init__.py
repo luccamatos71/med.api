@@ -6,6 +6,7 @@ from app.models.material import Material
 from app.models.material_chunk import MaterialChunk
 from app.models.material_read_position import MaterialReadPosition
 from app.models.material_summary import MaterialSummary
+from app.models.topic_summary import TopicSummary
 from app.models.chat_message import ChatMessage
 from app.models.conversation import Conversation
 from app.models.flashcard import Flashcard
@@ -24,6 +25,7 @@ __all__ = [
     "MaterialChunk",
     "MaterialReadPosition",
     "MaterialSummary",
+    "TopicSummary",
     "ChatMessage",
     "Conversation",
     "Flashcard",
