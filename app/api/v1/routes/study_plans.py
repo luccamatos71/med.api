@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.models.flashcard_review import FlashcardReview
 from app.models.study_plan import StudyPlan
 from app.models.subject import Subject
 from app.models.topic import Topic
@@ -65,7 +66,21 @@ async def create_study_plan(
     if not topics:
         raise HTTPException(status_code=409, detail="Suas matérias ainda não têm tópicos.")
 
-    plan = build_plan(today=date.today(), exam_date=body.exam_date, topics=topics)
+    # Real FSRS review load per day (from the user's scheduled cards).
+    review_rows = (
+        await db.execute(
+            select(FlashcardReview.due_date).where(
+                FlashcardReview.user_id == user_id, FlashcardReview.due_date.is_not(None)
+            )
+        )
+    ).all()
+    due_by_date: dict[str, int] = {}
+    for (dd,) in review_rows:
+        if dd:
+            key = dd.date().isoformat()
+            due_by_date[key] = due_by_date.get(key, 0) + 1
+
+    plan = build_plan(today=date.today(), exam_date=body.exam_date, topics=topics, due_by_date=due_by_date)
     overview = await generate_overview(
         exam_date=body.exam_date,
         total_days=plan["summary"]["total_days"],
