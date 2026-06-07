@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
         await stop_embedded_worker()
 
 
-app = FastAPI(title=".med API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Ana Space API", version="0.1.0", lifespan=lifespan)
 logger = logging.getLogger(__name__)
 
 app.add_middleware(

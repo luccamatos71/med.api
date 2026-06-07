@@ -45,7 +45,7 @@ def _sse(data: dict[str, Any]) -> str:
 
 
 SYSTEM_PROMPT = (
-    "Você é o assistente de estudos da .med — inteligente, direto e conversacional, "
+    "Você é o assistente de estudos da Ana Space — inteligente, direto e conversacional, "
     "como um ChatGPT focado em ajudar uma estudante de medicina. "
     "Entenda exatamente o que ela perguntou e responda de forma natural e completa, "
     "sem tom de manual nem estrutura rígida obrigatória. "
